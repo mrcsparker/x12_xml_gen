@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+
+require "bundler/setup"
+require "x12_xml_gen"
+
+puts X12XmlGen::show
+
+X12XmlGen::run

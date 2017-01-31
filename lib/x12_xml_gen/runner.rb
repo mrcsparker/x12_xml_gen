@@ -38,6 +38,10 @@ module X12XmlGen
 
     private
 
+    def dash(s)
+      s.downcase.gsub(' ', '-').gsub('/', '-').gsub("\'", '').gsub('(', '').gsub(')', '')
+    end
+
     def do_table_def(xml, table_def)
       table_def.header_segment_uses.each do |header_segment_use|
         do_segment_use(xml, header_segment_use)
@@ -57,7 +61,12 @@ module X12XmlGen
       segment_use.definition.element_uses.each_with_index do |element_use, index|
 
         if element_use.requirement.forbidden?
-          s << ''
+          s << '.*'
+          next
+        end
+
+        if element_use.requirement.optional?
+          s << '.*'
           next
         end
 
@@ -75,12 +84,14 @@ module X12XmlGen
         end
       end
 
-      s = s.reverse.drop_while { |i| i == "" }.reverse
-      segcode = "#{segcode}\\*#{s.join('\*')}"
+      s = s.reverse.drop_while { |i| i == ".*" }.reverse
+      s << '.*' if s.empty?
+
+      segcode = "#{segcode}\\*#{s.join('\*')}.*"
 
       xml['medi'].segment('segcode' => segcode,
-                          'xmltag' => segment_use.definition.id.to_s.downcase,
-                          'name' => segment_use.definition.name,
+                          'xmltag' => dash(segment_use.definition.name.to_s),
+                          'name' => segment_use.definition.id,
                           'description' => segment_use.definition.purpose,
                           'truncatable' => true,
                           'ignoreUnmappedFields' => true,
@@ -94,9 +105,14 @@ module X12XmlGen
 
     def do_loop_def(xml, loop_def)
 
-      xml['medi'].segmentGroup('xmltag' => loop_def.id.gsub(' ', '-').downcase,
+      max_occurs = loop_def.repeat_count.inspect == '>1' ? -1 : loop_def.repeat_count.inspect
+      if loop_def.parent.class.name.to_s.split('::').last
+        max_occurs = -1
+      end
+
+      xml['medi'].segmentGroup('xmltag' => dash(loop_def.id.to_s),
                                'minOccurs' => loop_def.requirement.required? ? 1 : 0,
-                               'maxOccurs' => loop_def.repeat_count.inspect == '>1' ? -1 : loop_def.repeat_count.inspect) {
+                               'maxOccurs' => max_occurs) {
         loop_def.header_segment_uses.each do |header_segment_use|
           do_segment_use(xml, header_segment_use)
         end
@@ -133,15 +149,15 @@ module X12XmlGen
 
     def do_element_use(xml, element_use)
       if element_use.definition.composite?
-        xml['medi'].field('xmltag' => element_use.definition.id,
-                          'name' => element_use.definition.name,
+        xml['medi'].field('xmltag' => dash(element_use.definition.name),
+                          'name' => element_use.definition.id,
                           'required' => element_use.requirement.required?,
                           'truncatable' => true) do
 
           element_use.definition.component_uses.each do |component_use|
             d = {
-              'xmltag' => component_use.definition.id,
-              'name' => component_use.definition.name,
+              'xmltag' => dash(component_use.definition.name),
+              'name' => component_use.definition.id,
               'required' => component_use.requirement.required?,
               'minLength' => component_use.definition.min_length,
               'maxLength' => component_use.definition.max_length
@@ -155,9 +171,15 @@ module X12XmlGen
         return
       end
 
+      xmltag = dash(element_use.definition.name)
+
+      if element_use.requirement.forbidden?
+        xmltag = "NA-#{xmltag}"
+      end
+
       d = {
-        'xmltag' => element_use.definition.id,
-        'name' => element_use.definition.name,
+        'xmltag' => xmltag,
+        'name' => element_use.definition.id,
         'required' => element_use.requirement.required?,
         'minLength' => element_use.definition.min_length,
         'maxLength' => element_use.definition.max_length

@@ -29,6 +29,10 @@ module X12XmlGen
 
       xml = builder.to_xml(indent: 4)
 
+      File.open("tmp/#{@name}.xml", 'w') do |file|
+        file.write xml
+      end
+
       xml
     end
 
@@ -48,20 +52,31 @@ module X12XmlGen
 
       segcode = segment_use.definition.id.to_s
 
-      if segment_use.definition.element_uses.size > 0 && (segment_use.definition.element_uses[0].methods.include? :allowed_values)
-        p segment_use.definition.id.to_s
-        p segment_use.definition.element_uses[0].definition.id.to_s
-        p segment_use.definition.element_uses[0].allowed_values
-        p segment_use.definition.element_uses[0].allowed_values.class.name == nil
-        if segment_use.definition.element_uses[0].allowed_values.size >= 1 && segment_use.definition.element_uses[0].allowed_values.class.name != nil
-          allowed_values = segment_use.definition.element_uses[0].allowed_values
-          allowed_values = allowed_values.to_a.join('|')
-          allowed_values = "(#{allowed_values})"
+      s = []
 
-          segcode = "#{segcode}\\*#{allowed_values}.*"
+      segment_use.definition.element_uses.each_with_index do |element_use, index|
+
+        if element_use.requirement.forbidden?
+          s << ''
+          next
         end
-        p "==="
+
+        if element_use.methods.include? :allowed_values
+
+          allowed_values = element_use.allowed_values
+          if allowed_values.inspect == 'UniversalSet'
+            s << '.*'
+          else
+            allowed_values = allowed_values.to_a.join('|')
+            s << "(#{allowed_values})"
+          end
+        else
+          s << '.*'
+        end
       end
+
+      s = s.reverse.drop_while { |i| i == "" }.reverse
+      segcode = "#{segcode}\\*#{s.join('\*')}"
 
       xml['medi'].segment('segcode' => segcode,
                           'xmltag' => segment_use.definition.id.to_s.downcase,
@@ -122,26 +137,36 @@ module X12XmlGen
                           'name' => element_use.definition.name,
                           'required' => element_use.requirement.required?,
                           'truncatable' => true) do
+
           element_use.definition.component_uses.each do |component_use|
-            xml['medi'].component('xmltag' => component_use.definition.id,
-                                  'name' => component_use.definition.name,
-                                  'required' => component_use.requirement.required?,
-                                  'minLength' => component_use.definition.min_length,
-                                  'maxLength' => component_use.definition.max_length)
-                        .merge(data_type(component_use.definition))
-                        .merge(data_type_parameters(component_use.definition))
+            d = {
+              'xmltag' => component_use.definition.id,
+              'name' => component_use.definition.name,
+              'required' => component_use.requirement.required?,
+              'minLength' => component_use.definition.min_length,
+              'maxLength' => component_use.definition.max_length
+            }
+            .merge(data_type(component_use.definition))
+            .merge(data_type_parameters(component_use.definition))
+
+            xml['medi'].component(d)
           end
         end
         return
       end
 
-      xml['medi'].field('xmltag' => element_use.definition.id,
-                        'name' => element_use.definition.name,
-                        'required' => element_use.requirement.required?,
-                        'minLength' => element_use.definition.min_length,
-                        'maxLength' => element_use.definition.max_length)
-                  .merge(data_type(element_use.definition))
-                  .merge(data_type_parameters(element_use.definition))
+      d = {
+        'xmltag' => element_use.definition.id,
+        'name' => element_use.definition.name,
+        'required' => element_use.requirement.required?,
+        'minLength' => element_use.definition.min_length,
+        'maxLength' => element_use.definition.max_length
+      }
+      .merge(data_type(element_use.definition))
+      .merge(data_type_parameters(element_use.definition))
+
+      xml['medi'].field(d)
+
     end
   end
 end
